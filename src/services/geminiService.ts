@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -8,6 +8,96 @@ export interface WasteClassification {
   instruction: string;
   collectionPointType: string | null;
 }
+
+export const generateSpeech = async (text: string): Promise<string> => {
+  try {
+    // 1. Try Google Cloud TTS API (Wavenet/Neural2)
+    const apiKey = process.env.GEMINI_API_KEY;
+    const cloudTtsResponse = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text: text },
+        voice: { languageCode: 'pl-PL', name: 'pl-PL-Wavenet-A' }, // Wavenet female voice
+        audioConfig: { audioEncoding: 'MP3' }
+      })
+    });
+
+    if (cloudTtsResponse.ok) {
+      const data = await cloudTtsResponse.json();
+      if (data.audioContent) {
+        const blob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
+        return URL.createObjectURL(blob);
+      }
+    }
+    
+    console.warn("Google Cloud TTS failed or unauthorized, falling back to Gemini TTS...");
+  } catch (e) {
+    console.warn("Google Cloud TTS fetch error, falling back to Gemini TTS...", e);
+  }
+
+  // 2. Fallback to Gemini TTS if Cloud TTS fails (which is likely due to API key restrictions)
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: `Przeczytaj ten tekst po polsku: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Aoede' }, // Aoede is a good female voice
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      throw new Error("Brak danych audio w odpowiedzi.");
+    }
+    
+    // Convert raw PCM to WAV
+    const binaryString = atob(base64Audio);
+    const pcmData = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      pcmData[i] = binaryString.charCodeAt(i);
+    }
+
+    const sampleRate = 24000;
+    const wavHeader = new ArrayBuffer(44);
+    const view = new DataView(wavHeader);
+
+    const writeString = (view: DataView, offset: number, string: string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + pcmData.length, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, pcmData.length, true);
+
+    const wavBytes = new Uint8Array(44 + pcmData.length);
+    wavBytes.set(new Uint8Array(wavHeader), 0);
+    wavBytes.set(pcmData, 44);
+
+    const blob = new Blob([wavBytes], { type: 'audio/wav' });
+    return URL.createObjectURL(blob);
+  } catch (error) {
+    console.error("Błąd podczas generowania mowy (Gemini TTS):", error);
+    throw error;
+  }
+};
 
 export const classifyWaste = async (text: string, imageBase64?: string, mimeType?: string): Promise<WasteClassification> => {
   const parts: any[] = [];

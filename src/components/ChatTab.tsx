@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Trash2, AlertCircle, Loader2, Map as MapIcon } from 'lucide-react';
-import { classifyWaste, WasteClassification } from '../services/geminiService';
+import { Send, Image as ImageIcon, Trash2, AlertCircle, Loader2, Map as MapIcon, Volume2, VolumeX, Play, Pause, Square } from 'lucide-react';
+import { classifyWaste, WasteClassification, generateSpeech } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
 import { mockCollectionPoints } from '../lib/mockData';
 
@@ -28,8 +28,90 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
   const [inputValue, setInputValue] = useState('');
   const [selectedImage, setSelectedImage] = useState<{ url: string; file: File } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.src = '';
+      }
+    };
+  }, [currentAudio]);
+
+  const speakText = async (msgId: string, classification: WasteClassification) => {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.src = '';
+    }
+    
+    setIsAudioLoading(msgId);
+    setSpeakingId(null);
+    setIsPaused(false);
+    
+    try {
+      const text = `${classification.name}. Kategoria to: ${classification.category}. ${classification.instruction}`;
+      const audioUrl = await generateSpeech(text);
+      
+      const audio = new Audio(audioUrl);
+      
+      audio.onplay = () => {
+        setSpeakingId(msgId);
+        setIsPaused(false);
+        setIsAudioLoading(null);
+      };
+      
+      audio.onpause = () => {
+        if (audio.currentTime !== audio.duration) {
+          setIsPaused(true);
+        }
+      };
+      
+      audio.onended = () => {
+        setSpeakingId(null);
+        setIsPaused(false);
+        setCurrentAudio(null);
+      };
+      
+      audio.onerror = () => {
+        setSpeakingId(null);
+        setIsPaused(false);
+        setIsAudioLoading(null);
+        setCurrentAudio(null);
+      };
+
+      setCurrentAudio(audio);
+      await audio.play();
+    } catch (error) {
+      console.error("Failed to play audio:", error);
+      setIsAudioLoading(null);
+    }
+  };
+
+  const pauseSpeech = () => {
+    if (currentAudio) currentAudio.pause();
+  };
+
+  const resumeSpeech = () => {
+    if (currentAudio) currentAudio.play();
+  };
+
+  const stopSpeech = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      setSpeakingId(null);
+      setIsPaused(false);
+      setCurrentAudio(null);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -93,11 +175,17 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
 
       const classification = await classifyWaste(newUserMsg.text || '', base64Image, mimeType);
       
+      const newBotMsgId = Date.now().toString();
       setMessages(prev => [...prev, {
-        id: Date.now().toString(),
+        id: newBotMsgId,
         type: 'bot',
         classification,
       }]);
+
+      if (isVoiceEnabled) {
+        // Small delay to ensure state is updated before speaking
+        setTimeout(() => speakText(newBotMsgId, classification), 100);
+      }
 
     } catch (error) {
       console.error("Classification error:", error);
@@ -134,6 +222,7 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
   };
 
   const handleClearChat = () => {
+    stopSpeech();
     setMessages([
       {
         id: 'welcome',
@@ -147,8 +236,20 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
     <div className="flex flex-col h-full relative">
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 relative">
-        {messages.length > 1 && (
-          <div className="sticky top-0 z-10 flex justify-end mb-4">
+        <div className="sticky top-0 z-10 flex justify-end gap-2 mb-4">
+          <button
+            onClick={() => {
+              setIsVoiceEnabled(!isVoiceEnabled);
+              if (isVoiceEnabled) {
+                stopSpeech();
+              }
+            }}
+            className={`bg-[#151518]/90 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors shadow-lg ${isVoiceEnabled ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white'}`}
+          >
+            {isVoiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            {isVoiceEnabled ? 'Lektor włączony' : 'Lektor wyłączony'}
+          </button>
+          {messages.length > 1 && (
             <button 
               onClick={handleClearChat}
               className="bg-[#151518]/90 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors shadow-lg"
@@ -156,8 +257,8 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
               <Trash2 size={14} />
               Wyczyść czat
             </button>
-          </div>
-        )}
+          )}
+        </div>
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
@@ -220,15 +321,65 @@ export default function ChatTab({ onShowOnMap }: ChatTabProps) {
                         </div>
                       )}
                       
-                      {mockCollectionPoints.some(point => point.accepted_categories.includes(msg.classification!.category)) && (
-                        <button 
-                          onClick={() => onShowOnMap(msg.classification!.category)}
-                          className="w-full mt-2 bg-white/5 hover:bg-white/10 text-white text-sm font-medium py-2.5 rounded-xl border border-white/10 transition-colors flex items-center justify-center gap-2"
-                        >
-                          <MapIcon size={16} className="text-blue-400" />
-                          Pokaż punkty na mapie
-                        </button>
-                      )}
+                      <div className="flex gap-2 mt-2">
+                        {isAudioLoading === msg.id ? (
+                          <button
+                            disabled
+                            className="flex-1 bg-white/5 text-white/50 text-sm font-medium py-2.5 rounded-xl border border-white/10 flex items-center justify-center gap-2"
+                          >
+                            <Loader2 size={16} className="animate-spin" />
+                            Generowanie...
+                          </button>
+                        ) : speakingId === msg.id ? (
+                          <>
+                            {isPaused ? (
+                              <button
+                                onClick={resumeSpeech}
+                                className="flex-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-sm font-medium py-2.5 rounded-xl border border-blue-500/30 transition-colors flex items-center justify-center gap-2"
+                                title="Wznów czytanie"
+                              >
+                                <Play size={16} />
+                                Wznów
+                              </button>
+                            ) : (
+                              <button
+                                onClick={pauseSpeech}
+                                className="flex-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-medium py-2.5 rounded-xl border border-amber-500/30 transition-colors flex items-center justify-center gap-2"
+                                title="Wstrzymaj czytanie"
+                              >
+                                <Pause size={16} />
+                                Pauza
+                              </button>
+                            )}
+                            <button
+                              onClick={stopSpeech}
+                              className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm font-medium py-2.5 rounded-xl border border-red-500/30 transition-colors flex items-center justify-center gap-2"
+                              title="Zatrzymaj czytanie"
+                            >
+                              <Square size={16} />
+                              Stop
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => speakText(msg.id, msg.classification!)}
+                            className="flex-1 bg-white/5 hover:bg-white/10 text-white text-sm font-medium py-2.5 rounded-xl border border-white/10 transition-colors flex items-center justify-center gap-2"
+                            title="Czytaj na głos"
+                          >
+                            <Volume2 size={16} className="text-blue-400" />
+                            Czytaj
+                          </button>
+                        )}
+                        {mockCollectionPoints.some(point => point.accepted_categories.includes(msg.classification!.category)) && (
+                          <button 
+                            onClick={() => onShowOnMap(msg.classification!.category)}
+                            className="flex-[2] bg-white/5 hover:bg-white/10 text-white text-sm font-medium py-2.5 rounded-xl border border-white/10 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <MapIcon size={16} className="text-blue-400" />
+                            Pokaż na mapie
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
