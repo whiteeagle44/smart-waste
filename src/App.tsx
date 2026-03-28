@@ -10,26 +10,43 @@ import MapTab from './components/MapTab';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'map'>('chat');
+  const [mapFilter, setMapFilter] = useState<{category: string, id: number} | null>(null);
+
+  const handleShowOnMap = (category: string) => {
+    setMapFilter({ category, id: Date.now() });
+    setActiveTab('map');
+  };
 
   return (
     <div className="flex flex-col h-screen bg-[#0A0A0C] text-white overflow-hidden">
       {/* Header */}
       <header className="px-6 py-4 border-b border-white/10 bg-[#0A0A0C]/80 backdrop-blur-md z-10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center">
-            <span className="font-bold text-lg">S</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center">
+              <span className="font-bold text-lg">S</span>
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight">Smart<span className="text-blue-500">Waste</span></h1>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Smart<span className="text-blue-500">Waste</span></h1>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative">
-        {activeTab === 'chat' ? <ChatTab /> : <MapTab />}
+        <div className={`w-full h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+          <ChatTab onShowOnMap={handleShowOnMap} />
+        </div>
+        <div className={`w-full h-full ${activeTab === 'map' ? 'block' : 'hidden'}`}>
+          <MapTab 
+            isActive={activeTab === 'map'}
+            externalFilter={mapFilter} 
+            onClearExternalFilter={() => setMapFilter(null)} 
+          />
+        </div>
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="border-t border-white/10 bg-[#151518] px-6 py-4 pb-safe">
+      <nav className="border-t border-white/10 bg-[#151518] px-6 py-4 pb-safe z-20">
         <div className="flex justify-around items-center max-w-md mx-auto">
           <button
             onClick={() => setActiveTab('chat')}

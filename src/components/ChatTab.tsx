@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Image as ImageIcon, Trash2, AlertCircle, Loader2, Map as MapIcon } from 'lucide-react';
 import { classifyWaste, WasteClassification } from '../services/geminiService';
 import { motion, AnimatePresence } from 'motion/react';
+import { mockCollectionPoints } from '../lib/mockData';
 
 interface Message {
   id: string;
@@ -12,7 +13,11 @@ interface Message {
   isError?: boolean;
 }
 
-export default function ChatTab() {
+interface ChatTabProps {
+  onShowOnMap: (category: string) => void;
+}
+
+export default function ChatTab({ onShowOnMap }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -116,19 +121,43 @@ export default function ChatTab() {
 
   const getCategoryColor = (category: string) => {
     const cat = category.toLowerCase();
-    if (cat.includes('plastik') || cat.includes('tworzywa') || cat.includes('metal')) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    if (cat.includes('metale') || cat.includes('tworzywa') || cat.includes('plastik')) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
     if (cat.includes('papier')) return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
     if (cat.includes('szkło')) return 'bg-green-500/20 text-green-400 border-green-500/30';
     if (cat.includes('bio')) return 'bg-amber-700/20 text-amber-500 border-amber-700/30';
     if (cat.includes('zmieszane')) return 'bg-zinc-600/20 text-zinc-300 border-zinc-600/30';
-    if (cat.includes('elektro') || cat.includes('niebezpieczne') || cat.includes('leki')) return 'bg-red-500/20 text-red-400 border-red-500/30';
+    if (cat.includes('elektro') || cat.includes('baterie')) return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+    if (cat.includes('niebezpieczne') || cat.includes('leki')) return 'bg-red-500/20 text-red-400 border-red-500/30';
+    if (cat.includes('gabaryty') || cat.includes('budowlane') || cat.includes('opony')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    if (cat.includes('tekstylia') || cat.includes('odzież')) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
     return 'bg-blue-600/20 text-blue-400 border-blue-600/30';
+  };
+
+  const handleClearChat = () => {
+    setMessages([
+      {
+        id: 'welcome',
+        type: 'bot',
+        text: 'Cześć! Jestem Twoim asystentem SmartWaste. Zrób zdjęcie śmiecia lub opisz go, a powiem Ci, gdzie go wyrzucić.',
+      }
+    ]);
   };
 
   return (
     <div className="flex flex-col h-full relative">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 relative">
+        {messages.length > 1 && (
+          <div className="sticky top-0 z-10 flex justify-end mb-4">
+            <button 
+              onClick={handleClearChat}
+              className="bg-[#151518]/90 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors shadow-lg"
+            >
+              <Trash2 size={14} />
+              Wyczyść czat
+            </button>
+          </div>
+        )}
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
@@ -189,6 +218,16 @@ export default function ChatTab() {
                             Wymaga specjalnego punktu: <span className="font-semibold">{msg.classification.collectionPointType}</span>. Sprawdź mapę!
                           </p>
                         </div>
+                      )}
+                      
+                      {mockCollectionPoints.some(point => point.accepted_categories.includes(msg.classification!.category)) && (
+                        <button 
+                          onClick={() => onShowOnMap(msg.classification!.category)}
+                          className="w-full mt-2 bg-white/5 hover:bg-white/10 text-white text-sm font-medium py-2.5 rounded-xl border border-white/10 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <MapIcon size={16} className="text-blue-400" />
+                          Pokaż punkty na mapie
+                        </button>
                       )}
                     </div>
                   )}

@@ -33,7 +33,7 @@ export const classifyWaste = async (text: string, imageBase64?: string, mimeType
     model: "gemini-3-flash-preview",
     contents: { parts },
     config: {
-      systemInstruction: "Jesteś asystentem ds. recyklingu i segregacji odpadów w Polsce. Twoim zadaniem jest sklasyfikowanie podanego odpadu (na podstawie opisu lub zdjęcia) i podanie instrukcji, jak go wyrzucić. Zwróć wynik w formacie JSON.",
+      systemInstruction: "Jesteś asystentem ds. recyklingu i segregacji odpadów w Polsce. Twoim zadaniem jest sklasyfikowanie podanego odpadu (na podstawie opisu lub zdjęcia) i podanie instrukcji, jak go wyrzucić. Zwróć wynik w formacie JSON. Kategoria musi być jedną z 13 ściśle określonych frakcji. Dodatkowa wiedza: Jeśli butelka plastikowa posiada etykietę zwrotną należy oddać ją do sklepu w którym jest punkt odbioru butelek, a za każdą z nich można odzyskać 50 gr. Butelki takie muszą być opróżnione i niezgniecione oraz musi być na nich widoczna etykieta zwrotna.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -44,7 +44,22 @@ export const classifyWaste = async (text: string, imageBase64?: string, mimeType
           },
           category: {
             type: Type.STRING,
-            description: "Kategoria odpadu (np. Metale i tworzywa sztuczne, Papier, Szkło, Zmieszane, Bio, Elektrośmieci, Gabaryty, Leki, Odpady niebezpieczne)."
+            description: "Kategoria odpadu.",
+            enum: [
+              "Metale i tworzywa sztuczne",
+              "Papier",
+              "Szkło",
+              "Bioodpady",
+              "Odpady zmieszane",
+              "Elektrośmieci",
+              "Baterie i akumulatory",
+              "Gabaryty",
+              "Odpady niebezpieczne",
+              "Leki i odpady medyczne",
+              "Odpady budowlane i poremontowe",
+              "Tekstylia i odzież",
+              "Opony"
+            ]
           },
           instruction: {
             type: Type.STRING,
@@ -52,7 +67,7 @@ export const classifyWaste = async (text: string, imageBase64?: string, mimeType
           },
           collectionPointType: {
             type: Type.STRING,
-            description: "Sugerowany typ punktu zbiórki (np. PSZOK, Apteka, Pojemnik na elektrośmieci), jeśli to śmieć nietypowy. Zwróć null jeśli to zwykły śmieć domowy."
+            description: "Sugerowany typ punktu zbiórki (np. PSZOK, Apteka, Pojemnik na elektrośmieci, Kontener PCK), jeśli to śmieć nietypowy. Zwróć null jeśli to zwykły śmieć domowy wrzucany do przydomowych pojemników."
           }
         },
         required: ["name", "category", "instruction"]
